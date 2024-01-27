@@ -1,9 +1,9 @@
 //    FILE: INA226.cpp
-//  AUTHOR: Rob Tillaart
-// VERSION: 0.5.2
-//    DATE: 2021-05-18
+//  AUTHOR: Rob Tillaart / Henk Holdijk
+// VERSION: 0.0.0
+//    DATE: 2024-01-27
 // PURPOSE: Arduino library for INA226 power sensor
-//     URL: https://github.com/RobTillaart/INA226
+//     URL: https://github.com/HenkHoldijk/RobTillaart_HenkHoldijk_INA226
 
 
 #include "INA226.h"
@@ -27,20 +27,14 @@
 #define INA226_CONF_SHUNTVC_MASK        ( 0x0038 )
 #define INA226_CONF_MODE_MASK           ( 0x0007 )
 
-//  set by setAlertRegister
-#define INA226_SHUNT_OVER_VOLTAGE       ( 0x8000 )
-#define INA226_SHUNT_UNDER_VOLTAGE      ( 0x4000 )
-#define INA226_BUS_OVER_VOLTAGE         ( 0x2000 )
-#define INA226_BUS_UNDER_VOLTAGE        ( 0x1000 )
-#define INA226_POWER_OVER_LIMIT         ( 0x0800 )
-#define INA226_CONVERSION_READY         ( 0x0400 )
-
-//  returned by getAlertFlag
+//  Flags in the INA226_MASK_ENABLE register
 #define INA226_ALERT_FUNCTION_FLAG      ( 0x0010 )
 #define INA226_CONVERSION_READY_FLAG    ( 0x0008 )
 #define INA226_MATH_OVERFLOW_FLAG       ( 0x0004 )
-#define INA226_ALERT_POLARITY_FLAG      ( 0x0002 )
-#define INA226_ALERT_LATCH_ENABLE_FLAG  ( 0x0001 )
+
+//  Settings in the INA226_MASK_ENABLE register
+#define INA226_ALERT_PIN_POLARITY_BIT   ( 0x0002 )
+#define INA226_ALERT_LATCH_ENABLE_BIT   ( 0x0001 )
 
 //  returned by setMaxCurrentShunt
 #define INA226_ERR_NONE                 ( 0x0000 )
@@ -168,7 +162,7 @@ float INA226::getCurrent()
 float INA226::getPower()
 {
   uint16_t val = _readRegister(INA226_POWER);
-  return val * 25 * _current_LSB;  //  fixed 25 Watt
+  return val * 25 * _current_LSB;  //  fixed LSB = 25 mW
 }
 
 
@@ -364,7 +358,7 @@ int INA226::setMaxCurrentShunt(float maxCurrent, float shunt, bool normalize)
     currentLSB_uA++;  //  ceil() would be more precise, but uses 176 bytes of flash.
 
     uint16_t factor = 1;  //  1uA to 1000uA
-    uint8_t i = 0;        //  1 byte loop reduces footprint
+    uint8_t i       = 0;  //  1 byte loop reduces footprint
     bool result = false;
     do {
       if ( 1 * factor >= currentLSB_uA) {
@@ -382,7 +376,7 @@ int INA226::setMaxCurrentShunt(float maxCurrent, float shunt, bool normalize)
       }
     } while( (i < 4) && (!result) );  //  factor < 10000 
 
-    if (result == false) {  //  not succeeded to normalize.
+    if (result == false) {            //  not succeeded to normalize.
       _current_LSB = 0;
       return INA226_ERR_NORMALIZE_FAILED;
     }
@@ -404,8 +398,8 @@ int INA226::setMaxCurrentShunt(float maxCurrent, float shunt, bool normalize)
   }
   if (_writeRegister(INA226_CALIBRATION, calib)) return INA226_ERR_WRITE_REG_FAILED;
 
+  _shunt      = shunt;
   _maxCurrent = _current_LSB * 32768;
-  _shunt = shunt;
 
   #ifdef printdebug
     Serial.print("Final current_LSB:\t");
@@ -456,16 +450,45 @@ ina226_mode_enum INA226::getMode()
 //
 //  alert
 //
-bool INA226::setAlertRegister(uint16_t mask)
+
+bool INA226::setAlertPinPolarity(ina226_alert_pin_polarity_enum ePolarity)
 {
-  if (_writeRegister(INA226_MASK_ENABLE, (mask & 0xFC00))) return false;
+  uint16_t dRegVal = _readRegister(INA226_MASK_ENABLE);
+  dRegVal &= ~(INA226_ALERT_PIN_POLARITY_BIT);            // Keep the only the other bits
+  dRegVal |= (ePolarity * INA226_ALERT_PIN_POLARITY_BIT); // Add the new bit (or not)
+  if (_writeRegister(INA226_MASK_ENABLE, dRegVal)) return false;
   return true;
 }
 
 
-uint16_t INA226::getAlertFlag()
+bool INA226::setAlertLatch(ina226_alert_latch_enum eLatch)
 {
-  return _readRegister(INA226_MASK_ENABLE) & 0x001F;
+  uint16_t dRegVal = _readRegister(INA226_MASK_ENABLE);
+  dRegVal &= ~(INA226_ALERT_LATCH_ENABLE_BIT);          // Keep the only the other bits
+  dRegVal |= (eLatch * INA226_ALERT_LATCH_ENABLE_BIT);  // Add the new bit (or not)
+  if (_writeRegister(INA226_MASK_ENABLE, dRegVal)) return false;
+  return true;
+}
+
+
+bool INA226::getAlertFunctionFlag()
+{
+  uint16_t dRegVAL = _readRegister(INA226_MASK_ENABLE);
+  return (dRegVAL & INA226_ALERT_FUNCTION_FLAG) == INA226_ALERT_FUNCTION_FLAG;
+}
+
+
+bool INA226::getConversionReadyFlag()
+{
+  uint16_t dRegVAL = _readRegister(INA226_MASK_ENABLE);
+  return (dRegVAL & INA226_CONVERSION_READY_FLAG) == INA226_CONVERSION_READY_FLAG;
+}
+
+
+bool INA226::getMathOverflowFlag()
+{
+  uint16_t dRegVAL = _readRegister(INA226_MASK_ENABLE);
+  return (dRegVAL & INA226_MATH_OVERFLOW_FLAG) == INA226_MATH_OVERFLOW_FLAG;
 }
 
 
@@ -479,6 +502,66 @@ bool INA226::setAlertLimit(uint16_t limit)
 uint16_t INA226::getAlertLimit()
 {
   return _readRegister(INA226_ALERT_LIMIT);
+}
+
+
+bool INA226::setAlert(ina226_alert_enum eAlertType, float fAlertLimit)
+{
+  uint16_t dAlertLimit = 0;
+
+  switch(eAlertType)
+  {
+    case INA226_SHUNT_OVER_VOLTAGE_MV  :
+    case INA226_SHUNT_UNDER_VOLTAGE_MV :
+      // +/- 81.92 mV = +/- 32768 
+      if (fAlertLimit >= 81.92) break;
+      dAlertLimit = fAlertLimit * (32768 / 81.92);
+      break;
+    case INA226_BUS_OVER_VOLTAGE_V  :
+    case INA226_BUS_UNDER_VOLTAGE_V :
+      // Fixed LSB = 1.25 mV with 40.96 as a maximum (0x7FFF = 32767)
+      // Above contradicts, so assume the 1.25 mV is correct
+      if (fAlertLimit >= 40.96) break;
+      dAlertLimit = fAlertLimit * (32768 / 40.96);
+      break;
+    case INA226_POWER_OVER_LIMIT_W :
+      // Power LSB = 25 x the [1 × 10–3 Current_LSB]
+      dAlertLimit = fAlertLimit / (25 * _current_LSB);
+      break;
+    case INA226_CONVERSION_READY :
+      // Avoid compiler warning
+      break;
+    case INA226_SHUNT_OVER_CURRENT_A  :
+    case INA226_SHUNT_UNDER_CURRENT_A :
+      // Current = Shunt Voltage / Shunt Resistor
+      // LSb     = 81.92 mV / 32768    = 2.5 uV
+      // LSb     = 2.5 uV / _shunt Ohm = ... uA
+      // Limit   = 10^6 * ((A * _shunt) / 2.5)
+      if (fAlertLimit > _maxCurrent) break;
+      dAlertLimit = 1e6 * ((fAlertLimit * _shunt) / 2.5);
+      break;
+    case INA226_SHUNT_OVER_CURRENT_MA  :
+    case INA226_SHUNT_UNDER_CURRENT_MA :
+      // Limit = 10^6 * ((A * _shunt) / 2.5)
+      // Limit = 10^3 * ((mA * _shunt) / 2.5)  
+      if (fAlertLimit > (1000 * _maxCurrent)) break;
+      dAlertLimit = 1e3 * ((fAlertLimit * _shunt) / 2.5);
+      break;
+  }
+
+  // Write the required limit
+  if (eAlertType != INA226_CONVERSION_READY)
+  {
+    if (_writeRegister(INA226_ALERT_LIMIT, dAlertLimit)) return false;
+  }
+
+  // Get the current register content
+  uint16_t dRegVal  = _readRegister(INA226_MASK_ENABLE);
+  dRegVal          &= ~(0xFC00);              // Delete upper 6 MSb and keep all other
+  dRegVal          |= (0xFC00 & eAlertType);  // Add the new bits (only the 6 MSb)
+  if (_writeRegister(INA226_MASK_ENABLE, dRegVal)) return false;
+
+  return true;
 }
 
 

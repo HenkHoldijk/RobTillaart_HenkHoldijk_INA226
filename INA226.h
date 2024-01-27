@@ -1,10 +1,10 @@
 #pragma once
 //    FILE: INA226.h
-//  AUTHOR: Rob Tillaart
-// VERSION: 0.5.2
-//    DATE: 2021-05-18
+//  AUTHOR: Rob Tillaart / Henk Holdijk
+// VERSION: 0.0.0
+//    DATE: 2024-01-27
 // PURPOSE: Arduino library for INA226 power sensor
-//     URL: https://github.com/RobTillaart/INA226
+//     URL: https://github.com/HenkHoldijk/RobTillaart_HenkHoldijk_INA226
 //
 //  Read the datasheet for the details
 //
@@ -14,7 +14,7 @@
 #include "Wire.h"
 
 
-#define INA226_LIB_VERSION      ( "0.5.2" )
+#define INA226_LIB_VERSION      ( "0.0.0" )
 
 
 //  See issue #26
@@ -46,8 +46,8 @@ enum ina226_ct_enum {
 };
 
 
-// MODE SETTINGS
-// Note : 0 and 4 value have the same function
+//  MODE SETTINGS
+//  Note : 0 and 4 value have the same function
 enum ina226_mode_enum {
     INA226_SHUTDOWN_MODE           = 0,
     INA226_SHUNTTRIGGER_MODE       = 1,
@@ -56,6 +56,35 @@ enum ina226_mode_enum {
     INA226_SHUNTCONTINUOUS_MODE    = 5,
     INA226_BUSCONTINUOUS_MODE      = 6,
     INA226_SHUNTBUSCONTINUOUS_MODE = 7
+};
+
+
+//  ALERT TYPE SETTINGS (+ 4 additional Types)
+enum ina226_alert_enum {
+    INA226_SHUNT_OVER_VOLTAGE_MV  = 0x8000,
+    INA226_SHUNT_UNDER_VOLTAGE_MV = 0x4000,
+    INA226_BUS_OVER_VOLTAGE_V     = 0x2000,
+    INA226_BUS_UNDER_VOLTAGE_V    = 0x1000,
+    INA226_POWER_OVER_LIMIT_W     = 0x0800,
+    INA226_CONVERSION_READY       = 0x0400,
+    INA226_SHUNT_OVER_CURRENT_A   = 0x8001,  // Uses INA226_SHUNT_OVER_VOLTAGE
+    INA226_SHUNT_UNDER_CURRENT_A  = 0x4001,  // Uses INA226_SHUNT_UNDER_VOLTAGE
+    INA226_SHUNT_OVER_CURRENT_MA  = 0x8002,  // Uses INA226_SHUNT_OVER_VOLTAGE
+    INA226_SHUNT_UNDER_CURRENT_MA = 0x4002   // Uses INA226_SHUNT_UNDER_VOLTAGE
+};
+
+
+//  Polarity definition
+enum ina226_alert_pin_polarity_enum {
+    INA226_ACTIVE_LOW  = 0,
+    INA226_ACTIVE_HIGH = 1
+};
+
+
+//  Latch definition
+enum ina226_alert_latch_enum {
+    INA226_LATCH_TRANSPARENT = 0,
+    INA226_LATCH_ENABLED     = 1
 };
 
 
@@ -131,15 +160,14 @@ public:
 
 
   //  Alert
-  //  - separate functions per flag?
-  //  - what is a reasonable limit?
-  //  - which units to define a limit per mask ?
-  //    same as voltage registers ?
-  //  - how to test
-  bool     setAlertRegister(uint16_t mask);
-  uint16_t getAlertFlag();
+  bool     setAlertPinPolarity(ina226_alert_pin_polarity_enum ePolarity);
+  bool     setAlertLatch(ina226_alert_latch_enum eLatch);
+  bool     getAlertFunctionFlag();
+  bool     getConversionReadyFlag();
+  bool     getMathOverflowFlag();
   bool     setAlertLimit(uint16_t limit);
   uint16_t getAlertLimit();
+  bool     setAlert(ina226_alert_enum type, float limit);
 
 
   //  Meta information
@@ -163,7 +191,7 @@ private:
   ina226_avg_enum  _avg;
   ina226_ct_enum   _bvct;
   ina226_ct_enum   _svct;
-
+  
   uint8_t          _address;
   TwoWire *        _wire;
 };
